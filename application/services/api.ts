@@ -36,7 +36,8 @@ async function request<T = unknown>(
 
   if (!response.ok) {
     // Throw an error object that mimics an axios-style error so callers can read .response.data.message
-    const error: any = new Error(data?.message || "Request failed");
+    const errorMessage = data?.message || data?.error || "Request failed";
+    const error: any = new Error(errorMessage);
     error.response = { data, status: response.status };
     throw error;
   }

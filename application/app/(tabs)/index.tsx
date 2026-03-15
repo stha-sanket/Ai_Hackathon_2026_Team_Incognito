@@ -6,11 +6,15 @@ import {
   FlatList,
   TextInput,
   KeyboardAvoidingView,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useState, useEffect, useRef } from "react";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { speechService } from "../../services/SpeechRecognitionService";
+import api from "../../services/api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import Markdown from "react-native-markdown-display";
 
 interface Message {
   id: string;
@@ -19,13 +23,31 @@ interface Message {
   timestamp: Date;
 }
 
+// Fallback responses when server is unavailable
+const FALLBACK_RESPONSES: Record<string, string> = {
+  default:
+    "म तपाइँको कुरा बुझ्दैछु। सर्भर उपलब्ध छैन, कृपया पछि प्रयास गर्नुहोस्।",
+  medicine: "औषधि सम्बन्धी जानकारीको लागि सर्भर जडान जाँच गर्नुहोस्।",
+  mood: "तपाइँको मनस्थिति रेकर्ड गर्न सर्भरसँग जडान आवश्यक छ।",
+};
+
+function getFallback(text: string): string {
+  if (text.includes("औषधि") || text.includes("medicine"))
+    return FALLBACK_RESPONSES.medicine;
+  if (text.includes("मन") || text.includes("mood"))
+    return FALLBACK_RESPONSES.mood;
+  return FALLBACK_RESPONSES.default;
+}
+
 export default function VoiceScreen() {
   const [isRecording, setIsRecording] = useState(false);
   const [isVoiceMode, setIsVoiceMode] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "1",
-      text: "नमस्ते! म तपाइँको स्वास्थ्य सहायक केयर+ हुँ। म तपाइँलाई कसरी मद्दत गर्न सक्छु?",
+      text: "नमस्ते! म तपाइँको स्वास्थ्य सहायक Care+ हुँ। म तपाइँलाई औषधि, मनस्थिति, र स्वास्थ्य सम्बन्धी कुराकानीमा सहयोग गर्न सक्छु। के गर्न सक्छु?",
       sender: "ai",
       timestamp: new Date(),
     },
@@ -34,6 +56,20 @@ export default function VoiceScreen() {
   const flatListRef = useRef<FlatList>(null);
 
   useEffect(() => {
+    // Load or generate saved userId (must be 24-char hex for MongoDB ObjectId)
+    const initUserId = async () => {
+      let id = await AsyncStorage.getItem("userId");
+      if (!id || id === "demo-user") {
+        // Generate a valid 24-character hex string
+        id = [...Array(24)]
+          .map(() => Math.floor(Math.random() * 16).toString(16))
+          .join("");
+        await AsyncStorage.setItem("userId", id);
+      }
+      setUserId(id);
+    };
+    initUserId();
+
     // Check and request permissions on mount
     const checkPermissions = async () => {
       const granted = await speechService.requestPermissions();
@@ -53,7 +89,6 @@ export default function VoiceScreen() {
       } else if (event.type === "result") {
         if (event.results && event.results.length > 0) {
           const result = event.results[0];
-          // When we get a final result, we "send" it to the chat
           if (result.isFinal) {
             handleSendMessage(result.transcript);
             setIsRecording(false);
@@ -61,7 +96,9 @@ export default function VoiceScreen() {
         }
       } else if (event.type === "error") {
         setIsRecording(false);
-        console.error(`Speech Error: ${event.error}`);
+        if (event.error !== "no-speech") {
+          console.error(`Speech Error: ${event.error}`);
+        }
       }
     });
 
@@ -71,55 +108,67 @@ export default function VoiceScreen() {
     };
   }, []);
 
-  const handleSendMessage = (text: string) => {
-    if (!text.trim()) return;
+  const handleSendMessage = async (text: string) => {
+    if (!text.trim() || isLoading) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
-      text: text,
+      text,
       sender: "user",
       timestamp: new Date(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
     setInputText("");
+    setIsLoading(true);
 
-    // Simulate AI response in Nepali
-    setTimeout(() => {
-      const responseText = getMockNepaliResponse(text);
+    try {
+      // Due to the speech listener capturing a stale closure of `userId` on mount,
+      // we must fetch it directly from AsyncStorage if the state variable is null.
+      const activeUserId = userId || (await AsyncStorage.getItem("userId"));
+
+      if (!activeUserId) {
+        throw new Error("User ID not loaded");
+      }
+
+      const response = await api.post<{ reply: string }>("/chat", {
+        userId: activeUserId,
+        message: text,
+      });
+
+      const responseText = (response.data as any)?.reply || getFallback(text);
+
       const aiResponse: Message = {
         id: (Date.now() + 1).toString(),
         text: responseText,
         sender: "ai",
         timestamp: new Date(),
       };
+
       setMessages((prev) => [...prev, aiResponse]);
 
-      // Speak the response
+      // Speak the response via TTS
       speechService.speak(responseText, () => {
-        // If voice mode is on, start listening again after AI finishes speaking
         if (isVoiceMode) {
           startListening();
         }
       });
-    }, 800);
-  };
-
-  const getMockNepaliResponse = (userInput: string) => {
-    const input = userInput.toLowerCase();
-
-    // Simple response logic (can be expanded)
-    if (input.includes("टाउको") || input.includes("headache")) {
-      return "तपाइँको टाउको दुखाइको लागि आराम गर्नुहोस् र धेरै पानी पिउनुहोस्।";
+    } catch (error: any) {
+      console.error("Chat API error:", error);
+      const fallback = getFallback(text);
+      const aiResponse: Message = {
+        id: (Date.now() + 1).toString(),
+        text: fallback,
+        sender: "ai",
+        timestamp: new Date(),
+      };
+      setMessages((prev) => [...prev, aiResponse]);
+      speechService.speak(fallback, () => {
+        if (isVoiceMode) startListening();
+      });
+    } finally {
+      setIsLoading(false);
     }
-    if (input.includes("ज्वरो") || input.includes("fever")) {
-      return "ज्वरो आएको बेला शरीरको तापक्रम जाँच गरिरहनुहोस्।";
-    }
-    if (input.includes("धन्न्यवाद") || input.includes("thank")) {
-      return "तपाइँलाई स्वागत छ!";
-    }
-
-    return "म तपाइँको कुरा बुझ्दैछु। अरु केहि समस्या छ?";
   };
 
   const startListening = () => {
@@ -166,11 +215,27 @@ export default function VoiceScreen() {
           : "bg-white self-start rounded-tl-none border border-slate-100 shadow-sm"
       }`}
     >
-      <Text
-        className={`text-base leading-6 ${item.sender === "user" ? "text-white font-medium" : "text-slate-800"}`}
-      >
-        {item.text}
-      </Text>
+      {item.sender === "user" ? (
+        <Text className={`text-base leading-6 text-white font-medium`}>
+          {item.text}
+        </Text>
+      ) : (
+        <Markdown
+          style={{
+            body: {
+              fontSize: 16,
+              lineHeight: 24,
+              color: "#1e293b",
+            },
+            paragraph: {
+              marginTop: 0,
+              marginBottom: 0,
+            },
+          }}
+        >
+          {item.text}
+        </Markdown>
+      )}
       <View className="flex-row justify-end mt-1 items-center">
         <Text
           className={`text-[10px] ${item.sender === "user" ? "text-blue-100" : "text-slate-400"}`}
@@ -200,6 +265,7 @@ export default function VoiceScreen() {
         keyboardVerticalOffset={Platform.OS === "ios" ? 100 : 0}
       >
         <View className="flex-1 px-4 pt-4">
+          {/* Header */}
           <View className="items-center mb-4 flex-row justify-between">
             <View className="flex-row items-center">
               <View className="bg-blue-100 p-2 rounded-xl mr-2">
@@ -214,7 +280,7 @@ export default function VoiceScreen() {
                   Care+
                 </Text>
                 <Text className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">
-                  Health Companion
+                  AI Health Agent
                 </Text>
               </View>
             </View>
@@ -236,6 +302,7 @@ export default function VoiceScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Messages */}
           <FlatList
             ref={flatListRef}
             data={messages}
@@ -252,16 +319,40 @@ export default function VoiceScreen() {
             }
           />
 
+          {/* Thinking indicator */}
+          {isLoading && (
+            <View className="flex-row items-center mb-2 px-2">
+              <ActivityIndicator size="small" color="#2563eb" />
+              <Text className="ml-2 text-slate-500 text-sm">
+                Care+ सोच्दैछ...
+              </Text>
+            </View>
+          )}
+
+          {/* Input bar */}
           <View className="flex-row items-center p-2 mb-4 bg-white rounded-3xl shadow-md border border-slate-100">
             <TouchableOpacity
               onPress={toggleRecording}
-              className={`w-12 h-12 rounded-full items-center justify-center ${isRecording ? "bg-red-500" : "bg-slate-50"}`}
+              disabled={isLoading || !userId}
+              className={`w-12 h-12 rounded-full items-center justify-center ${
+                isRecording
+                  ? "bg-red-500"
+                  : isLoading || !userId
+                    ? "bg-slate-200"
+                    : "bg-slate-50"
+              }`}
               activeOpacity={0.7}
             >
               <MaterialCommunityIcons
                 name={isRecording ? "stop" : "microphone"}
                 size={24}
-                color={isRecording ? "white" : "#475569"}
+                color={
+                  isRecording
+                    ? "white"
+                    : isLoading || !userId
+                      ? "#cbd5e1"
+                      : "#475569"
+                }
               />
             </TouchableOpacity>
 
@@ -272,25 +363,32 @@ export default function VoiceScreen() {
               onChangeText={setInputText}
               multiline={false}
               placeholderTextColor="#94a3b8"
+              editable={!isLoading && userId !== null}
             />
 
             <TouchableOpacity
               onPress={() => handleSendMessage(inputText)}
-              disabled={!inputText.trim()}
+              disabled={!inputText.trim() || isLoading || !userId}
               className={`w-12 h-12 rounded-full items-center justify-center ${
-                inputText.trim() ? "bg-blue-600" : "bg-slate-100"
+                inputText.trim() && !isLoading && userId
+                  ? "bg-blue-600"
+                  : "bg-slate-100"
               }`}
             >
-              <MaterialCommunityIcons
-                name="send"
-                size={24}
-                color={inputText.trim() ? "white" : "#cbd5e1"}
-              />
+              {isLoading ? (
+                <ActivityIndicator size="small" color="#94a3b8" />
+              ) : (
+                <MaterialCommunityIcons
+                  name="send"
+                  size={24}
+                  color={inputText.trim() ? "white" : "#cbd5e1"}
+                />
+              )}
             </TouchableOpacity>
           </View>
 
           <Text className="text-center text-[10px] text-slate-400 mb-2">
-            तपाइँ नेपाली वा अंग्रेजीमा संवाद गर्न सक्नुहुन्छ
+            Gemini Flash 2.0 Lite • नेपाली भाषा सहयोग
           </Text>
         </View>
       </KeyboardAvoidingView>
