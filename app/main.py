@@ -116,9 +116,9 @@ async def chat_endpoint(request: Request, db: Session = Depends(db.get_db)):
             response_content = "Where did you put it? I need both the item and its location."
 
     elif intent == "OBJECT_QUERY":
-        # Extract object name for query
-        obj_name_prompt = f"Extract the object name being searched for in: \"{user_message}\". Return only the name."
-        obj_name = llm_service.generate_response(obj_name_prompt).strip()
+        # Extract object name for query - Tightened prompt (Fix 2)
+        obj_name_prompt = f"Identify the primary object being asked about in the message: \"{user_message}\". Return ONLY the name of the object (1-2 words). No punctuation."
+        obj_name = llm_service.generate_response(obj_name_prompt).strip().rstrip('.')
         loc = object_locator_service.find_location(obj_name)
         if loc:
             response_content = f"Found it: {loc}"

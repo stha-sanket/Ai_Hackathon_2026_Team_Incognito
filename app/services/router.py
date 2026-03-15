@@ -8,8 +8,14 @@ class RouterService:
     - MEDICINE_QUERY    (asking about existing medicines, reminders, what they take)
     - OBJECT_SAVE       (telling you where they placed or put something)
     - OBJECT_QUERY      (asking where something is)
-    - MOOD_QUERY        (asking about their mood or feelings history)
-    - GENERAL           (greetings, thanks, anything else)
+    - MOOD_QUERY        (ONLY for reviewing history, trends, or asking "how have I been feeling?")
+    - GENERAL           (greetings, saying "I feel sad", "I am happy", thanks, small talk)
+
+    Examples:
+    - "I feel sad" -> GENERAL (This is an expression, not a query of history)
+    - "How was my mood this week?" -> MOOD_QUERY
+    - "hello" -> GENERAL
+    - "Where are my keys?" -> OBJECT_QUERY
 
     User message: "{message}"
 
