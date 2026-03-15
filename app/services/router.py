@@ -23,6 +23,18 @@ class RouterService:
     """
 
     def classify(self, message):
+        import re
+        msg_lower = message.lower()
+        
+        # Keyword-based override for common Roman/Devanagari Nepali queries
+        object_query_keywords = [
+            "where", "find", "location", "lost",
+            "kata", "kaha", "khoi", "rakheko",  # Roman Nepali
+            "कता", "कहाँ", "खोई", "राखेको"    # Devanagari
+        ]
+        if any(kw in msg_lower for kw in object_query_keywords) and ("mero" in msg_lower or "मेरो" in msg_lower or "is" in msg_lower or "xa" in msg_lower):
+            return "OBJECT_QUERY"
+
         prompt = self.INTENT_PROMPT.format(message=message)
         label = llm_service.generate_response(prompt).strip().upper()
         

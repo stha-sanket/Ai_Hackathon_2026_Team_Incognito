@@ -1,10 +1,9 @@
 from .llm import llm_service
 import json
 import re
-import os
-import datetime
-
-OBJECTS_FILE = "data/objects.txt"
+from ..database import models
+from sqlalchemy.orm import Session
+from datetime import datetime
 
 class ObjectLocatorService:
     def parse_object_data(self, text):
@@ -20,30 +19,45 @@ class ObjectLocatorService:
         try:
             match = re.search(r'\{.*\}', response, re.DOTALL)
             if match:
-                return json.loads(match.group(0))
+                data = json.loads(match.group(0))
+                return {"object": data.get("object"), "location": data.get("location")}
             return {}
         except:
             return {}
 
-    def save_location(self, object_name, location):
-        ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        line = f"{ts} | {object_name} | {location}\n"
-        
-        os.makedirs(os.path.dirname(OBJECTS_FILE), exist_ok=True)
-        
-        with open(OBJECTS_FILE, "a", encoding="utf-8") as f:
-            f.write(line)
-            f.flush()
-        return line.strip()
+    def save_location(self, db: Session, object_name, location):
+        db_location = models.ObjectLocation(
+            object_name=object_name,
+            location=location
+        )
+        db.add(db_location)
+        db.commit()
+        db.refresh(db_location)
+        return db_location
 
-    def find_location(self, object_name):
-        if not os.path.exists(OBJECTS_FILE):
-            return None
-        with open(OBJECTS_FILE, "r", encoding="utf-8") as f:
-            lines = [l.strip() for l in f.readlines() if l.strip()]
-            for line in reversed(lines):
-                if object_name.lower() in line.lower():
-                    return line
-        return None
+    def find_location(self, db: Session, object_name):
+        # Find latest location for this object
+        return db.query(models.ObjectLocation).filter(
+            models.ObjectLocation.object_name.ilike(f"%{object_name}%")
+        ).order_by(models.ObjectLocation.timestamp.desc()).first()
+
+    def get_all_locations(self, db: Session):
+        return db.query(models.ObjectLocation).order_by(models.ObjectLocation.timestamp.desc()).all()
+
+    def update_location(self, db: Session, loc_id: int, data: dict):
+        db_location = db.query(models.ObjectLocation).filter(models.ObjectLocation.id == loc_id).first()
+        if db_location:
+            db_location.object_name = data.get('object', db_location.object_name)
+            db_location.location = data.get('location', db_location.location)
+            db.commit()
+            db.refresh(db_location)
+        return db_location
+
+    def delete_location(self, db: Session, loc_id: int):
+        db_location = db.query(models.ObjectLocation).filter(models.ObjectLocation.id == loc_id).first()
+        if db_location:
+            db.delete(db_location)
+            db.commit()
+        return db_location
 
 object_locator_service = ObjectLocatorService()
