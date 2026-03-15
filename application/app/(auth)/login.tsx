@@ -10,7 +10,6 @@ import {
 import { Link, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Text } from "react-native";
-
 import { useAuth } from "../../context/AuthContext";
 import { useThemeColor } from "@/hooks/use-theme-color";
 

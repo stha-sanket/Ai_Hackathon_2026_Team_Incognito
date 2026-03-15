@@ -6,10 +6,10 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Text,
 } from "react-native";
 import { Link, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { Text } from "react-native";
 
 import { useAuth } from "../../context/AuthContext";
 import { useThemeColor } from "@/hooks/use-theme-color";
@@ -32,7 +32,7 @@ export default function RegisterScreen() {
     setLoading(true);
     setError("");
     try {
-      await register(name, email, password, "user");
+      await register(name, email, password, "patient");
     } catch (err: any) {
       setError(
         err.response?.data?.message || "Registration failed. Please try again.",
@@ -45,7 +45,7 @@ export default function RegisterScreen() {
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : "height"}
-      className="flex-1"
+      className="flex-1 bg-white dark:bg-black"
     >
       <ScrollView contentContainerClassName="flex-grow px-6 py-10 justify-center">
         {/* Header */}

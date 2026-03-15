@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import api from "../services/api";
 
 interface User {
@@ -24,40 +25,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Web-safe storage wrapper
-const storage = {
-  getItem: async (key: string): Promise<string | null> => {
-    if (Platform.OS === "web") {
-      return localStorage.getItem(key);
-    }
-    // Lazy-require AsyncStorage only on native
-    const AsyncStorage = (
-      await import("@react-native-async-storage/async-storage")
-    ).default;
-    return AsyncStorage.getItem(key);
-  },
-  setItem: async (key: string, value: string): Promise<void> => {
-    if (Platform.OS === "web") {
-      localStorage.setItem(key, value);
-      return;
-    }
-    const AsyncStorage = (
-      await import("@react-native-async-storage/async-storage")
-    ).default;
-    return AsyncStorage.setItem(key, value);
-  },
-  removeItem: async (key: string): Promise<void> => {
-    if (Platform.OS === "web") {
-      localStorage.removeItem(key);
-      return;
-    }
-    const AsyncStorage = (
-      await import("@react-native-async-storage/async-storage")
-    ).default;
-    return AsyncStorage.removeItem(key);
-  },
-};
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -68,7 +35,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function loadStoredSession() {
     try {
-      const storedUser = await storage.getItem("user");
+      const storedUser = await AsyncStorage.getItem("user");
       if (storedUser) {
         setUser(JSON.parse(storedUser));
       }
@@ -83,7 +50,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await api.post("/users/login", { email, password });
       const userData = (response.data as any).user;
-      await storage.setItem("user", JSON.stringify(userData));
+      await AsyncStorage.setItem("user", JSON.stringify(userData));
       setUser(userData);
     } catch (error) {
       console.error("Login failed", error);
@@ -105,7 +72,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         role,
       });
       const userData = (response.data as any).user;
-      await storage.setItem("user", JSON.stringify(userData));
+      await AsyncStorage.setItem("user", JSON.stringify(userData));
       setUser(userData);
     } catch (error) {
       console.error("Registration failed", error);
@@ -115,8 +82,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function logout() {
     try {
-      await storage.removeItem("user");
-      await storage.removeItem("userToken");
+      await AsyncStorage.removeItem("user");
+      await AsyncStorage.removeItem("userToken");
       setUser(null);
     } catch (e) {
       console.error("Logout failed", e);
