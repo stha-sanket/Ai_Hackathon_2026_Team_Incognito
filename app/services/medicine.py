@@ -1,6 +1,4 @@
 from .llm import llm_service
-from ..database import models
-from sqlalchemy.orm import Session
 import json
 import re
 import os
@@ -8,30 +6,14 @@ import os
 MEDICINE_FILE = "data/medicines.txt"
 
 class MedicineService:
-    def parse_medicine_intent(self, text):
+    def parse_medicine_data(self, text):
         prompt = f"""
-        Extract medicine information from the following text: "{text}"
+        Extract medicine details from the following text: "{text}"
         Return a JSON object with:
-        - action: "add", "query", or "none"
-        - name: medicine name (if adding)
-        - dosage: dosage (if adding)
-        - frequency: frequency (if adding)
-        - timing: timing (if adding)
-        
-        Rules:
-        1. Only return "add" if the user explicitly mentions adding, taking, or starting a new medicine.
-        2. If the user is asking about their mood, feelings, or history of emotions, return "none".
-        3. Only return "query" if the user asks list, show, or check their medicines.
-        4. If the user is just saying hello, greeting you, or making small talk, return "none".
-
-        Example: "Add Metformin 500mg twice a day after meals" 
-        -> {{"action": "add", "name": "Metformin", "dosage": "500mg", "frequency": "twice a day", "timing": "after meals"}}
-        
-        Example: "hello" 
-        -> {{"action": "none"}}
-        
-        Example: "how have i been feeling" 
-        -> {{"action": "none"}}
+        - name: medicine name
+        - dosage: dosage (e.g., 500mg)
+        - frequency: frequency (e.g., twice a day)
+        - timing: timing (e.g., after meals)
         
         Only return the JSON.
         """
@@ -39,23 +21,33 @@ class MedicineService:
         try:
             match = re.search(r'\{.*\}', response, re.DOTALL)
             if match:
-                data = json.loads(match.group(0))
-                if "action" in data:
-                    return data
-            return {"action": "none"}
+                return json.loads(match.group(0))
+            return {}
         except:
-            return {"action": "none"}
+            return {}
 
     def add_medicine(self, data):
-        line = f"Name: {data.get('name', 'N/A')}, Dosage: {data.get('dosage', 'N/A')}, Frequency: {data.get('frequency', 'N/A')}, Timing: {data.get('timing', 'N/A')}\n"
-        with open(MEDICINE_FILE, "a") as f:
+        name = data.get('name', 'N/A')
+        dosage = data.get('dosage', 'N/A')
+        freq = data.get('frequency', 'N/A')
+        timing = data.get('timing', 'N/A')
+        
+        line = f"{name} | {dosage} | {freq} {timing}\n"
+        
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(MEDICINE_FILE), exist_ok=True)
+        
+        with open(MEDICINE_FILE, "a", encoding="utf-8") as f:
             f.write(line)
+            f.flush() # Fix 3: Force write to disk
         return data
 
-    def list_medicines(self):
+    def get_medicines(self):
+        # Fix 3: Consistent read function
         if not os.path.exists(MEDICINE_FILE):
             return []
-        with open(MEDICINE_FILE, "r") as f:
-            return f.readlines()
+        with open(MEDICINE_FILE, "r", encoding="utf-8") as f:
+            lines = [l.strip() for l in f.readlines() if l.strip()]
+        return lines
 
 medicine_service = MedicineService()

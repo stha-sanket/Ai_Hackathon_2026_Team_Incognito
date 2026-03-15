@@ -8,6 +8,7 @@ from .services.rag import rag_service
 from .services.medicine import medicine_service
 from .services.object_locator import object_locator_service
 from .services.mood import mood_service
+from .services.router import router_service
 import os
 import json
 from datetime import datetime, timedelta
@@ -26,12 +27,12 @@ async def read_index():
         return f.read()
 
 def is_confirmation(text):
-    prompt = f"Does the following text express confirmation or agreement? (e.g., 'yes', 'ok', 'sure', 'go ahead'). Text: \"{text}\". Answer only 'yes' or 'no'."
+    prompt = f"Does the user confirm or say yes? Text: \"{text}\". Answer only 'yes' or 'no'."
     resp = llm_service.generate_response(prompt).strip().lower()
     return "yes" in resp
 
 def is_rejection(text):
-    prompt = f"Does the following text express rejection or cancellation? (e.g., 'no', 'stop', 'cancel', 'don't'). Text: \"{text}\". Answer only 'yes' or 'no'."
+    prompt = f"Does the user reject or say no? Text: \"{text}\". Answer only 'yes' or 'no'."
     resp = llm_service.generate_response(prompt).strip().lower()
     return "yes" in resp
 
@@ -43,113 +44,124 @@ async def chat_endpoint(request: Request, db: Session = Depends(db.get_db)):
     if not user_message:
         raise HTTPException(status_code=400, detail="Message is required")
 
-    # 1. Passive Sentiment Analysis (Mood Tracking)
+    # 1. Passive Mood Logging
     sentiment = mood_service.analyze_sentiment(user_message)
     mood_service.log_mood(db, sentiment)
-
-    # 2. Save user message history
+    
+    # Save User History
     db_message = models.Message(role="user", content=user_message, sentiment=sentiment)
     db.add(db_message)
     db.commit()
 
     response_content = ""
 
-    # 3. Check for Pending Actions (Confirmation Logic)
+    # Fix 4: Check for Pending Actions FIRST
     pending = db.query(models.PendingAction).order_by(models.PendingAction.timestamp.desc()).first()
     if pending and (datetime.now() - pending.timestamp) < timedelta(minutes=5):
         if is_confirmation(user_message):
             action_data = json.loads(pending.data)
-            if pending.action_type == "medicine_add":
+            if pending.action_type == "MEDICINE_ADD":
                 medicine_service.add_medicine(action_data)
-                response_content = f"Confirmed. I've added {action_data.get('name')} to your medicine records."
-            elif pending.action_type == "object_save":
+                response_content = f"Confirmed. I've added **{action_data.get('name')}** to your records."
+            elif pending.action_type == "OBJECT_SAVE":
                 object_locator_service.save_location(action_data["object"], action_data["location"])
-                response_content = f"Confirmed. I've recorded that your {action_data['object']} is {action_data['location']}."
+                response_content = f"Confirmed. I've recorded that your **{action_data['object']}** is **{action_data['location']}**."
             db.delete(pending)
             db.commit()
         elif is_rejection(user_message):
-            response_content = "Okay, I've cancelled that action."
+            response_content = "Okay, I've cancelled that."
             db.delete(pending)
             db.commit()
         
         if response_content:
-            # Save assistant response
-            db_assistant_message = models.Message(role="assistant", content=response_content)
-            db.add(db_assistant_message)
-            db.commit()
+            finish_chat(db, response_content)
             return {"response": response_content, "sentiment": sentiment}
 
-    # 4. Intent Routing (Detection only, no execution)
-    
-    # Short-circuit basic greetings
-    greetings = ["hello", "hi", "hey", "good morning", "good afternoon", "good evening"]
-    if user_message.lower().strip() in greetings:
-        response_content = "Hello! How can I help you with your health or reminders today?"
+    # Fix 1: Strict Intent Classification
+    intent = router_service.classify(user_message)
 
-    # Check for Mood Summary
-    if not response_content and any(kw in user_message.lower() for kw in ["mood", "how have i been", "emotional", "feeling"]):
+    # Fix 2: Split Handlers
+    if intent == "MEDICINE_ADD":
+        med_data = medicine_service.parse_medicine_data(user_message)
+        if med_data.get("name"):
+            new_pending = models.PendingAction(
+                action_type="MEDICINE_ADD",
+                data=json.dumps(med_data)
+            )
+            db.add(new_pending)
+            db.commit()
+            response_content = f"You want to add **{med_data.get('name')}** ({med_data.get('dosage')}). Shall I save this?"
+        else:
+            response_content = "I couldn't quite catch the medicine name. Could you repeat that?"
+
+    elif intent == "MEDICINE_QUERY":
+        meds = medicine_service.get_medicines()
+        if meds:
+            response_content = "Here are your medicines:\n- " + "\n- ".join(meds)
+        else:
+            # Fix 3: Improved empty state message
+            response_content = "You haven't added any medicines yet."
+
+    elif intent == "OBJECT_SAVE":
+        obj_data = object_locator_service.parse_object_data(user_message)
+        if obj_data.get("object") and obj_data.get("location"):
+            new_pending = models.PendingAction(
+                action_type="OBJECT_SAVE",
+                data=json.dumps(obj_data)
+            )
+            db.add(new_pending)
+            db.commit()
+            response_content = f"Should I remember that your **{obj_data['object']}** is **{obj_data['location']}**?"
+        else:
+            response_content = "Where did you put it? I need both the item and its location."
+
+    elif intent == "OBJECT_QUERY":
+        # Extract object name for query
+        obj_name_prompt = f"Extract the object name being searched for in: \"{user_message}\". Return only the name."
+        obj_name = llm_service.generate_response(obj_name_prompt).strip()
+        loc = object_locator_service.find_location(obj_name)
+        if loc:
+            response_content = f"Found it: {loc}"
+        else:
+            response_content = f"I don't have a record of your {obj_name}."
+
+    elif intent == "MOOD_QUERY":
         response_content = mood_service.get_mood_summary(db)
 
-    # Medicine Intent
-    if not response_content:
-        med_intent = medicine_service.parse_medicine_intent(user_message)
-        if med_intent["action"] == "add":
-            # Store as pending
-            new_pending = models.PendingAction(
-                action_type="medicine_add",
-                data=json.dumps(med_intent)
-            )
-            db.add(new_pending)
-            db.commit()
-            response_content = f"I understand you want to add **{med_intent.get('name')}** ({med_intent.get('dosage')}) to your medicine list. Shall I proceed with saving this?"
-        elif med_intent["action"] == "query":
-            meds = medicine_service.list_medicines()
-            response_content = f"Here are your medicine records:\n" + "".join(meds) if meds else "No medicine records found."
-
-    # Object Locator Intent
-    if not response_content:
-        obj_intent = object_locator_service.parse_intent(user_message)
-        if obj_intent["action"] == "save":
-            # Store as pending
-            new_pending = models.PendingAction(
-                action_type="object_save",
-                data=json.dumps(obj_intent)
-            )
-            db.add(new_pending)
-            db.commit()
-            response_content = f"It sounds like you want me to remember that your **{obj_intent['object']}** is **{obj_intent['location']}**. Is that correct?"
-        elif obj_intent["action"] == "find":
-            loc_entry = object_locator_service.find_location(obj_intent["object"])
-            response_content = f"I found this: {loc_entry}" if loc_entry else f"I don't know where your {obj_intent['object']} is."
-
-    # 5. Fallback to Health RAG
-    if not response_content:
+    elif intent == "HEALTH_QA":
+        # Fix 5: RAG fallback for unknown health topics
         relevant_chunks = rag_service.retrieve(user_message)
-        context = "\n\n".join([c["content"] for c in relevant_chunks])
-        system_prompt = "You are Swastha Sathi, a health companion. Use English. Always include a medical disclaimer."
-        
-        if context:
-            prompt = f"Context:\n{context}\n\nUser: {user_message}\n\nAnswer based on context. Add disclaimer."
+        if not relevant_chunks:
+            response_content = (
+                "I don't have specific information about that in my knowledge base. "
+                "Please consult a qualified healthcare professional or visit your nearest health post."
+            )
         else:
-            prompt = user_message
-
-        history = db.query(models.Message).order_by(models.Message.id.desc()).limit(6).all()
-        history = history[::-1]
-        chat_messages = [{"role": m.role, "content": m.content} for m in history]
-        if context: chat_messages[-1]["content"] = prompt
+            context = "\n\n".join([c["content"] for c in relevant_chunks])
+            system_prompt = "You are Swastha Sathi. Use English. Only answer from context. Add medical disclaimer."
+            prompt = f"Context:\n{context}\n\nUser: {user_message}"
             
-        response_content = llm_service.chat(chat_messages, system_prompt=system_prompt)
+            history = db.query(models.Message).order_by(models.Message.id.desc()).limit(6).all()
+            history = history[::-1]
+            chat_messages = [{"role": m.role, "content": m.content} for m in history]
+            chat_messages[-1]["content"] = prompt
+            response_content = llm_service.chat(chat_messages, system_prompt=system_prompt)
+
+    elif intent == "GENERAL":
+        response_content = llm_service.chat([{"role": "user", "content": user_message}], 
+                                          system_prompt="You are Swastha Sathi, a friendly health companion. Say hello or help the user.")
 
     # 6. Distress Nudge
     nudge = mood_service.check_for_distress(db)
     if nudge: response_content += f"\n\n---\n{nudge}"
 
-    # Save assistant response
-    db_assistant_message = models.Message(role="assistant", content=response_content)
+    finish_chat(db, response_content)
+    return {"response": response_content, "sentiment": sentiment}
+
+def finish_chat(db, content):
+    db_assistant_message = models.Message(role="assistant", content=content)
     db.add(db_assistant_message)
     db.commit()
-
-    return {"response": response_content, "sentiment": sentiment}
 
 if __name__ == "__main__":
     import uvicorn
