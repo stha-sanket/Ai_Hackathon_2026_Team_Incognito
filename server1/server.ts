@@ -6,6 +6,7 @@ import medicineRouter from "./src/medicine/medicineRoutes.ts";
 import moodRouter from "./src/mood/moodRoutes.ts";
 import reportRouter from "./src/report/reportRoutes.ts";
 import chatRouter from "./src/llm/chatRoutes.ts";
+import objectRouter from "./src/llm/objectRoutes.ts";
 import { startMedicineCron } from "./src/cron/medicineCron.ts";
 
 const app = express();
@@ -22,6 +23,7 @@ app.use("/api/medicines", medicineRouter);
 app.use("/api/moods", moodRouter);
 app.use("/api/reports", reportRouter);
 app.use("/api/chat", chatRouter);
+app.use("/api/objects", objectRouter);
 app.get("/", (req, res) => {
   res.send("Hello World!");
 });

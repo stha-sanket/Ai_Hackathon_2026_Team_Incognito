@@ -28,12 +28,25 @@ class RouterService:
         
         # Keyword-based override for common Roman/Devanagari Nepali queries
         object_query_keywords = [
-            "where", "find", "location", "lost",
-            "kata", "kaha", "khoi", "rakheko",  # Roman Nepali
-            "कता", "कहाँ", "खोई", "राखेको"    # Devanagari
+            "where", "find", "location", "lost", "kata", "kaha", "khoi", "rakheko", "rakhiya", "rakhey",
+            "कता", "कहाँ", "खोई", "राखेको", "varda", "veta", "vettiyena", "vetiena"
         ]
-        if any(kw in msg_lower for kw in object_query_keywords) and ("mero" in msg_lower or "मेरो" in msg_lower or "is" in msg_lower or "xa" in msg_lower):
+        if any(kw in msg_lower for kw in object_query_keywords) and any(w in msg_lower for w in ["mero", "मेरो", "is", "xa", "chha", "cha", "rakhya", "rakheko"]):
             return "OBJECT_QUERY"
+
+        medicine_keywords = [
+            "medicine", "tablet", "dabaai", "ausadhi", "khani", "schedule", "time", "dosage",
+            "औषधि", "दबाई", "खाने", "खानी", "talika"
+        ]
+        if any(kw in msg_lower for kw in medicine_keywords) and any(w in msg_lower for w in ["mero", "मेरो", "k", "ke", "list", "all", "kun", "dekha"]):
+            return "MEDICINE_QUERY"
+        
+        health_keywords = [
+            "upachar", "bhayo", "dukhyo", "samsya", "vayo", "garne", "kasari",
+            "उपचार", "भयो", "दुख्यो", "समस्या", "कसरी"
+        ]
+        if any(kw in msg_lower for kw in health_keywords):
+            return "HEALTH_QA"
 
         prompt = self.INTENT_PROMPT.format(message=message)
         label = llm_service.generate_response(prompt).strip().upper()

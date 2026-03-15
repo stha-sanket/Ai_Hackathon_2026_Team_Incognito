@@ -4,6 +4,7 @@ import {
   ScrollView,
   ActivityIndicator,
   TouchableOpacity,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -11,12 +12,6 @@ import { useState, useCallback } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import api from "../../services/api";
-
-interface Mood {
-  score: number;
-  sentiment: string;
-  createdAt: string;
-}
 
 export default function ReportsScreen() {
   const [aiReport, setAiReport] = useState<string>("");
@@ -32,38 +27,14 @@ export default function ReportsScreen() {
         return;
       }
 
-      // Fetch AI Report and Mood History in parallel
-      const [reportRes, moodRes] = await Promise.all([
-        api.get<{ report: string }>(`/chat/report/${userId}`),
-        api.get<Mood[]>(`/moods/user/${userId}?days=7`),
-      ]);
+      const reportRes = await api.get<any>(`/chat/report/${userId}`);
+      const data = reportRes.data as any;
 
-      setAiReport(
-        (reportRes.data as any)?.report || "No report generated yet.",
-      );
-
-      const allMoods = moodRes.data;
-      if (allMoods && allMoods.length > 0) {
-        // Filter for today's moods only
-        const today = new Date().toDateString();
-        const todayMoods = allMoods.filter(
-          (m) => new Date(m.createdAt).toDateString() === today,
-        );
-
-        if (todayMoods.length > 0) {
-          const avg =
-            todayMoods.reduce((acc, curr) => acc + curr.score, 0) /
-            todayMoods.length;
-          setMoodScore(Math.round(avg * 10) / 10);
-        } else {
-          setMoodScore(null);
-        }
-      } else {
-        setMoodScore(null);
-      }
+      setAiReport(data?.report || "No report generated yet.");
+      setMoodScore(data?.moodScore ?? null);
     } catch (error) {
       console.error("Error fetching report data:", error);
-      setAiReport("रिपोर्ट प्राप्त गर्न सकिएन। (Failed to fetch report.)");
+      setAiReport("Failed to fetch report. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -75,6 +46,49 @@ export default function ReportsScreen() {
     }, []),
   );
 
+  const getMoodLabel = (score: number | null) => {
+    if (score === null) return "No Data";
+    if (score >= 8) return "Great";
+    if (score >= 6) return "Good";
+    if (score >= 4) return "Okay";
+    if (score >= 2) return "Low";
+    return "Needs Attention";
+  };
+
+  const getMoodColor = (score: number | null) => {
+    if (score === null) return "#94a3b8";
+    if (score >= 8) return "#16a34a";
+    if (score >= 6) return "#f59e0b";
+    if (score >= 4) return "#f97316";
+    return "#ef4444";
+  };
+
+  const clearHistory = () => {
+    Alert.alert(
+      "Clear Chat History",
+      "This will permanently delete all your conversation history. Are you sure?",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Clear",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              const userId = await AsyncStorage.getItem("userId");
+              if (!userId) return;
+              await api.delete(`/chat/history/${userId}`);
+              setAiReport("Chat history cleared. Start a new conversation!");
+              setMoodScore(null);
+            } catch (error) {
+              console.error("Error clearing history:", error);
+              Alert.alert("Error", "Failed to clear chat history.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <SafeAreaView className="flex-1 bg-slate-50">
       <ScrollView className="flex-1 px-6 pt-6">
@@ -82,12 +96,20 @@ export default function ReportsScreen() {
           <Text className="text-3xl font-bold text-slate-800">
             Daily Report
           </Text>
-          <TouchableOpacity
-            onPress={fetchReportData}
-            className="p-2 bg-slate-200 rounded-full"
-          >
-            <MaterialCommunityIcons name="refresh" size={20} color="#475569" />
-          </TouchableOpacity>
+          <View className="flex-row gap-2">
+            <TouchableOpacity
+              onPress={clearHistory}
+              className="p-2 bg-red-100 rounded-full"
+            >
+              <MaterialCommunityIcons name="delete-outline" size={20} color="#ef4444" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={fetchReportData}
+              className="p-2 bg-slate-200 rounded-full"
+            >
+              <MaterialCommunityIcons name="refresh" size={20} color="#475569" />
+            </TouchableOpacity>
+          </View>
         </View>
         <Text className="text-slate-500 mb-6">
           Overview of your wellness today.
@@ -98,51 +120,33 @@ export default function ReportsScreen() {
             <MaterialCommunityIcons
               name="emoticon-happy-outline"
               size={28}
-              color="#f59e0b"
+              color={getMoodColor(moodScore)}
             />
             <Text className="text-xl font-bold text-slate-800 ml-2">
               Mood Summary
             </Text>
           </View>
-          <View className="flex-row justify-between items-end">
-            <View>
-              <Text className="text-slate-500 text-sm">Average Score</Text>
-              <Text className="text-4xl font-bold text-slate-800 mt-1">
-                {moodScore !== null ? moodScore : "--"}
-                <Text className="text-lg text-slate-400">/10</Text>
-              </Text>
+          {loading ? (
+            <ActivityIndicator size="small" color="#3b82f6" className="mt-2" />
+          ) : (
+            <View className="flex-row justify-between items-end">
+              <View>
+                <Text className="text-slate-500 text-sm">Wellness Score</Text>
+                <Text className="text-4xl font-bold text-slate-800 mt-1">
+                  {moodScore !== null ? moodScore : "--"}
+                  <Text className="text-lg text-slate-400">/10</Text>
+                </Text>
+              </View>
+              <View
+                style={{ backgroundColor: `${getMoodColor(moodScore)}20` }}
+                className="px-3 py-1 rounded-full"
+              >
+                <Text style={{ color: getMoodColor(moodScore) }} className="font-medium">
+                  {getMoodLabel(moodScore)}
+                </Text>
+              </View>
             </View>
-            <View className="bg-amber-100 px-3 py-1 rounded-full">
-              <Text className="text-amber-700 font-medium">
-                {moodScore !== null ? "Synced" : "Tracking"}
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        <View className="flex-row gap-4 mb-6">
-          <View className="flex-1 bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
-            <MaterialCommunityIcons
-              name="pill"
-              size={28}
-              color="#16a34a"
-              className="mb-2"
-            />
-            <Text className="text-slate-500 text-sm mt-2">Adherence</Text>
-            <Text className="text-2xl font-bold text-slate-800 mt-1">--%</Text>
-          </View>
-          <View className="flex-1 bg-white p-5 rounded-3xl shadow-sm border border-slate-100">
-            <MaterialCommunityIcons
-              name="message-text-outline"
-              size={28}
-              color="#3b82f6"
-              className="mb-2"
-            />
-            <Text className="text-slate-500 text-sm mt-2">Conversations</Text>
-            <Text className="text-2xl font-bold text-slate-800 mt-1">
-              Active
-            </Text>
-          </View>
+          )}
         </View>
 
         <View className="bg-blue-600 p-6 rounded-3xl shadow-sm mb-10">

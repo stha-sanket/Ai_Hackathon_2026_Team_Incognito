@@ -9,7 +9,7 @@ from .services.rag import rag_service
 from .services.medicine import medicine_service
 from .services.object_locator import object_locator_service
 from .services.mood import mood_service
-from .services.router import router_service
+from .services.agent import swastha_agent
 import os
 import json
 from datetime import datetime, timedelta
@@ -318,6 +318,28 @@ def finish_chat(db, content):
     db_assistant_message = models.Message(role="assistant", content=content)
     db.add(db_assistant_message)
     db.commit()
+
+@app.post("/api/chat/agent")
+async def agent_chat_endpoint(request: Request):
+    data = await request.json()
+    user_id = data.get("userId")
+    message = data.get("message")
+    history = data.get("history", [])
+    
+    if not user_id or not message:
+        raise HTTPException(status_code=400, detail="userId and message are required")
+        
+    response = swastha_agent.run_chat(user_id, message, history)
+    return {"reply": response}
+
+@app.post("/api/report")
+async def report_endpoint(request: Request):
+    data = await request.json()
+    user_id = data.get("userId") or request.query_params.get("userId", "")
+    history = data.get("history", [])
+    
+    result = swastha_agent.generate_report(user_id, history)
+    return result
 
 if __name__ == "__main__":
     import uvicorn

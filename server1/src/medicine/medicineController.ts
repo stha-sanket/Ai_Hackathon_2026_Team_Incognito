@@ -79,3 +79,48 @@ export const updateMedicineStatus = async (
     res.status(500).json({ error: "Server error" });
   }
 };
+
+export const editMedicine = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { name, dosage, schedule, notes } = req.body;
+
+    const medicine = await Medicine.findById(id);
+    if (!medicine) {
+      res.status(404).json({ error: "Medicine not found" });
+      return;
+    }
+
+    if (name) medicine.name = name;
+    if (dosage) medicine.dosage = dosage;
+    if (schedule) medicine.schedule = schedule;
+    if (notes !== undefined) medicine.notes = notes;
+
+    await medicine.save();
+    res.status(200).json(medicine);
+  } catch (error) {
+    console.error("Error editing medicine:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+export const deleteMedicine = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const medicine = await Medicine.findByIdAndDelete(id);
+    if (!medicine) {
+      res.status(404).json({ error: "Medicine not found" });
+      return;
+    }
+    res.status(200).json({ message: "Medicine deleted" });
+  } catch (error) {
+    console.error("Error deleting medicine:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+};

@@ -186,28 +186,35 @@ class SpeechRecognitionService {
   }
 
   speak(text: string, onDone?: () => void) {
+    const isNepali = /[\u0900-\u097F]/.test(text);
+    const speechLang = isNepali ? "ne-NP" : "en-US";
+
     if (Platform.OS === "android") {
       const RNTts = NativeModules.RNTts;
-      if (!RNTts) {
-        console.warn(
-          "RNTts: Native module missing — please rebuild the app with 'npx expo run:android'.",
-        );
-        onDone?.();
-        return;
+      if (RNTts) {
+        try {
+          RNTts.speak(text, () => {
+            onDone?.();
+          });
+          return;
+        } catch (e) {
+          console.error("RNTts speak error:", e);
+        }
       }
+
+      // Fallback to expo-speech for Android
       try {
-        RNTts.speak(text, () => {
-          onDone?.();
-        });
+        const Speech = require("expo-speech");
+        Speech.speak(text, { language: speechLang, onDone });
       } catch (e) {
-        console.error("RNTts speak error:", e);
+        console.error("expo-speech fallback error:", e);
         onDone?.();
       }
     } else {
       // iOS / web fallback
       try {
         const Speech = require("expo-speech");
-        Speech.speak(text, { language: "ne-NP", onDone });
+        Speech.speak(text, { language: speechLang, onDone });
       } catch (e) {
         onDone?.();
       }
