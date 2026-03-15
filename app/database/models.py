@@ -39,3 +39,10 @@ class MoodLog(Base):
     id = Column(Integer, primary_key=True, index=True)
     sentiment = Column(String) # 'positive', 'neutral', 'negative', 'distressed'
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
+
+class PendingAction(Base):
+    __tablename__ = "pending_actions"
+    id = Column(Integer, primary_key=True, index=True)
+    action_type = Column(String) # e.g., 'medicine_add', 'object_save'
+    data = Column(Text) # JSON string
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
