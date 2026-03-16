@@ -1,123 +1,161 @@
-# Care+
+# Care+ — AI-Powered Personal Health Companion
 
-Care+ is a RAG-based agentic carebot designed to assist patients through voice interaction in Nepali.  
-The system provides medicine reminders, conversational companionship, mood tracking, and automated daily patient reports.
+[![Project Status: Active](https://img.shields.io/badge/Project%20Status-Active-brightgreen.svg)](https://github.com/stha-sanket/Ai_Hackathon_2026_Team_Incognito)
+[![Tech Stack: Local-AI](https://img.shields.io/badge/Tech%20Stack-Local--AI-blue.svg)](#tech-stack)
+[![Team: Incognito](https://img.shields.io/badge/Team-Incognito-purple.svg)](#contributors)
 
----
-
-## Overview
-
-Care+ focuses on improving patient wellbeing by combining conversational AI, reminder systems, and mood monitoring.  
-The bot interacts with patients using **Nepali speech-to-text and text-to-speech**, making it accessible for elderly users and those who prefer voice communication.
+> **Empowering Independence through Local Intelligence.** Care+ is a state-of-the-art health monitoring application designed for elderly care, combining private conversational AI with proactive health management tools.
 
 ---
 
-## MVP Features
+## 🌟 Features
 
-### 1. Nepali Voice Conversation
+### 🎙️ AI Chat Companion (Multi-lingual)
+A friendly, high-performance chatbot that communicates fluently in both **English and Nepali**. It answers health queries, manages daily tasks, and holds natural conversations — all processed locally via `gemma3:4b`.
 
-- Speech-to-Text (Nepali)
-- Conversational chatbot interface
-- Text-to-Speech response in Nepali
+### 💊 Proactive Medicine Management
+A comprehensive CRUD system for medications. The **Bun Orchestrator** handles schedules and fires **Push Notifications** via server-side Cron jobs, ensuring users never miss a dose.
 
-### 2. Medicine Reminder System
+### 🔍 intelligent Object Tracking
+Uses AI intent detection to help users remember where they placed their belongings (e.g., *"Where are my glasses?"*). The system parses natural language to save and retrieve locations instantly.
 
-- Schedule medicines with time
-- Voice and notification reminders
-- Patient confirmation (Taken / Skipped)
+### 🧠 Mood Analysis & Sentiment Trends
+Passive sentiment analysis periodically evaluates chat history to monitor emotional well-being. Trends are analyzed locally, providing insights into a user's mental health without compromising privacy.
 
-### 3. Mood Tracking
-
-- Sentiment detection from conversations
-- Timestamp-based mood logs
-- Daily mood score calculation
-
-### 4. Loneliness Companion
-
-- Friendly conversational interaction
-- Emotional check-ins
-- Encourages patient engagement
-
-### 5. Daily Patient Report
-
-Automatic report generation including:
-
-- Medicine adherence
-- Mood trends
-- Conversation activity
-- Reported symptoms
-
-### 6. RAG Knowledge Base
-
-Retrieval-Augmented Generation system that answers health-related questions using a curated medical knowledge dataset.
+### 📄 AI-Generated Health Reports
+Converts complex chat history and health data into structured, professional summaries. These reports are designed to be shared with family members or healthcare professionals.
 
 ---
 
-## Example Workflow
+## 🏗️ Architecture Overview
 
-1. Patient speaks in Nepali
-2. Speech is converted to text
-3. Care+ processes the query using the RAG system
-4. Response is generated
-5. Response is converted back to Nepali speech
+Care+ utilizes a **Federated Microservice Architecture** to separate UI, Business Logic, and Heavy AI Processing.
 
----
+```mermaid
+graph TD
+    subgraph "Client Layer (Mobile)"
+        App["React Native / Expo App"]
+    end
 
-## Architecture (MVP)
+    subgraph "Orchestration Layer (Bun)"
+        Bun["Bun + Express Server (Port 3000)"]
+        Mongo[(MongoDB)]
+        Cron["Medicine Cron Jobs"]
+    end
 
-User Voice Input  
-↓  
-Speech-to-Text (Nepali)  
-↓  
-Care+ Agent  
-↓  
-RAG Knowledge Base  
-↓  
-Response Generation  
-↓  
-Text-to-Speech (Nepali)
+    subgraph "AI Intelligence Layer (Python)"
+        Fast["FastAPI Engine (Port 8000)"]
+        Ollama["Ollama (gemma3:4b)"]
+        RAG["RAG Engine (Knowledge Base)"]
+    end
 
----
+    App <-->|REST API| Bun
+    Bun <-->|Data Persistence| Mongo
+    Bun <-->|AI Proxy| Fast
+    Fast <-->|Local Inference| Ollama
+    Fast <-->|Local Context| RAG
+```
 
-## Actual Tech Stack
-
-Frontend
-
-- React Native Expo
-- NativeWind (Tailwind CSS) for styling
-- Mobile-first interface
-
-Backend
-
-- FastAPI (Main AI/Health Services)
-- Node.js / Express with Bun (User/Auth Services)
-
-AI / ML
-
-- Local LLM (Ollama, e.g., Llama 3 8B)
-- Custom Keyword-Based RAG Pipeline
-
-Voice Processing
-
-- Client-side Speech-to-Text / Text-to-Speech (via React Native APIs/Expo)
-
-Database
-
-- SQLite (via SQLAlchemy for Health Data)
-- MongoDB (via Mongoose for User Data)
+### The Three Tiers
+1.  **Mobile Client (React Native)**: Handles the premium interface, voice input (TTS/STT), and notification display.
+2.  **Orchestrator (Bun Backend)**: The "Management" layer. Handles authentication, stores data in **MongoDB**, and manages automated medicine reminders.
+3.  **AI Engine (FastAPI)**: The "Brain". Handles multi-lingual intent routing, RAG (Retrieval-Augmented Generation), and report distillation using locally hosted LLMs.
 
 ---
 
-## Future Improvements
+## 💻 Tech Stack
 
-- Wearable health data integration
-- Emotion-aware AI responses
-- Doctor / caregiver dashboard
-- Long-term health analytics
-- Offline voice processing
+| Layer | Technology | Usage |
+| :--- | :--- | :--- |
+| **Frontend** | React Native (Expo) | Cross-platform UI, NativeWind, Notifications |
+| **Orchestrator** | Bun + Express | High-speed API Gateway, MongoDB, Cron Jobs |
+| **AI Engine** | FastAPI (Python) | Intent Classification, RAG, Nepali Detection |
+| **Local LLM** | Ollama (`gemma3:4b`) | Private, local-first inference engine |
+| **Databases** | MongoDB | Persistent storage for users/chat/meds |
 
 ---
 
-## Project Goal
+## 📂 Project Structure
 
-The goal of Care+ is to create an AI-powered care companion that helps patients stay healthy, reduces loneliness, and assists caregivers with better insights into patient wellbeing.
+```text
+care-plus/
+├── application/          # React Native / Expo Mobile App
+│   ├── app/              # Expo Router screens (Tabs, Auth)
+│   ├── services/         # API & Notification services
+│   └── components/       # Custom UI components
+│
+├── server1/              # Bun + Express Orchestrator (Port 3000)
+│   ├── src/
+│   │   ├── llm/          # Proxy logic for AI Engine
+│   │   ├── medicine/     # Medicine CRUD & Business Logic
+│   │   └── cron/         # Push notification schedules
+│
+└── app/                  # FastAPI AI Middleware (Port 8000)
+    ├── services/         # LLM, RAG, Intent, and Agent logic
+    ├── data/kb/          # Verified health knowledge base
+    └── main.py           # Engine entry point
+```
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+- **Ollama**: [Download & Install](https://ollama.com/)
+- **Bun**: `curl -fsSL https://bun.sh/install | bash`
+- **Node.js**: v18+
+- **Python**: 3.10+
+- **MongoDB**: Local instance running on port 27017
+
+### Initialization
+1.  **Pull the Model**:
+    ```bash
+    ollama pull gemma3:4b
+    ```
+2.  **Install Dependencies**:
+    ```bash
+    # Bun Server
+    cd server1 && bun install
+
+    # AI Engine
+    cd ../app && pip install -r requirements.txt
+
+    # Mobile App
+    cd ../application && npm install
+    ```
+
+---
+
+## 🚦 Running the Project
+
+Open three terminal windows (or use a task runner):
+
+1. **AI Brain** (Port 8000)
+   ```bash
+   cd app && python -m uvicorn main:app --reload
+   ```
+2. **Orchestrator** (Port 3000)
+   ```bash
+   cd server1 && bun dev
+   ```
+3. **App Client**
+   ```bash
+   cd application && npx expo start
+   ```
+
+---
+
+## 👥 Contributors
+
+This project was developed with passion by **Team Incognito**:
+
+- **Sanket Shrestha** · [stha-sanket](https://github.com/stha-sanket)
+- **Prashanta Adhikari** · [pr4shxnt](https://github.com/pr4shxnt)
+- **Shreya Khadka**
+- **Sabitra Pachai**
+
+---
+
+## 📄 License
+
+Care+ is a prototype developed for AI Hackathon 2026. All rights reserved by **Team Incognito**.
